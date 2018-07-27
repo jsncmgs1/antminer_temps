@@ -5,7 +5,7 @@ require 'net/http'
 module AntMiner
   class Client
     class << self
-      attr_accessor :addresses, :port, :stats, :writer, :ws
+      attr_accessor :addresses, :port, :stats, :writer, :ws, :reader
       attr_reader :sockets
 
       def config
@@ -16,8 +16,10 @@ module AntMiner
     end
 
     at_exit do
-      Process.kill 9, ws
+      writer.close
       puts '*' * 30
+      puts "\nClosing socket server..."
+      Process.kill 9, ws
       puts "\nClosing sockets..."
       puts "\nexiting..."
       sockets.each {|_, socket| socket.close }
@@ -25,13 +27,8 @@ module AntMiner
 
 
     def initialize
-      writer.write "FOOOOOOOOOOOOOOOOO"
-      writer.close
-      addresses.each do |a|
-        # sockets << a
-        # sockets[a] = TCPSocket.open(a, port)
-        stats[a] = []
-      end
+      reader.close
+      addresses.each { |a| stats[a] = [] }
     end
 
     def monitor
@@ -41,7 +38,7 @@ module AntMiner
       puts "Getting stats from #{addresses.count} miners\n"
       puts '*' * 45
 
-      while true do
+      loop do
         sleep 1
 
         addresses.each do |address|
@@ -49,11 +46,14 @@ module AntMiner
           json = Api::Stats.get_temps(socket)
           socket.close
           stats[address] << json
+          writer.puts json
           puts "Logged stats for #{address}"
         end
       end
     end
 
+    # must unfuck this
+    #
     def addresses
       self.class.addresses
     end
@@ -76,6 +76,10 @@ module AntMiner
 
     def ws
       self.class.ws
+    end
+
+    def reader
+      self.class.reader
     end
   end
 
