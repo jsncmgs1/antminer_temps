@@ -1,38 +1,33 @@
 require 'json'
 require 'socket'
-require 'net/http'
+require './stats'
 
 module AntMiner
+  class Config
+    attr_accessor :addresses, :port, :writer, :ws, :reader
+  end
+
   class Client
-    class << self
-      attr_accessor :addresses, :port, :stats, :writer, :ws, :reader
-      attr_reader :sockets
-
-      def config
-        @sockets = {}
-        @stats   = {}
-        yield self
-      end
-    end
-
-    at_exit do
-      writer.close
-      puts '*' * 30
-      puts "\nClosing socket server..."
-      Process.kill 9, ws
-      puts "\nClosing sockets..."
-      puts "\nexiting..."
-      sockets.each {|_, socket| socket.close }
-    end
-
+    attr_reader :config
+    attr_accessor :stats
 
     def initialize
-      reader.close
+      @stats  = {}
+      @config = Config.new
+      yield @config
       addresses.each { |a| stats[a] = [] }
+      reader.close
     end
 
     def monitor
-      trap('INT') { exit }
+      at_exit do
+        writer.close
+        puts '*' * 30
+        puts "\nClosing socket server..."
+        Process.kill 9, ws
+        puts "\nClosing sockets..."
+        puts "\nexiting..."
+      end
 
       puts '*' * 45
       puts "Getting stats from #{addresses.count} miners\n"
@@ -42,7 +37,12 @@ module AntMiner
         sleep 1
 
         addresses.each do |address|
-          socket = TCPSocket.open(address, port)
+          begin
+            socket = TCPSocket.open(address, port)
+          rescue Errno::ETIMEDOUT
+            puts "Could not establish connection to miners. Ensure your miners are on, connected to the network, and you input the addresses correctly"
+            exit
+          end
           json = Api::Stats.get_temps(socket)
           socket.close
           stats[address] << json
@@ -52,68 +52,10 @@ module AntMiner
       end
     end
 
-    # must unfuck this
-    #
-    def addresses
-      self.class.addresses
-    end
-
-    def port
-      self.class.port
-    end
-
-    def sockets
-      self.class.sockets
-    end
-
-    def stats
-      self.class.stats
-    end
-
-    def writer
-      self.class.writer
-    end
-
-    def ws
-      self.class.ws
-    end
-
-    def reader
-      self.class.reader
-    end
-  end
-
-  module Api
-    module Stats
-      extend self
-
-      def get_temps(socket)
-        socket.write({command: "stats"}.to_json)
-        response = socket.read.strip
-
-        parse(JSON.parse(response))
-      rescue JSON::ParserError => e
-
-        # stats command generates broken json, this gets what we need
-        if nested_json = e.message.match(/\{.*\}\]/)
-          response = nested_json[0]
-        end
-
-        response = response.gsub("]", "")
-
-        parse(JSON.parse(response))
-      end
-
-      def parse(stats)
-        {
-          pcb_1: stats["temp1"],
-          pcb_2: stats["temp2"],
-          pcb_3: stats["temp3"],
-          chip_1: stats["temp2_1"],
-          chip_2: stats["temp2_2"],
-          chip_3: stats["temp2_3"]
-        }
-      end
-    end
+    def addresses ; config.addresses end
+    def port      ; config.port      end
+    def writer    ; config.writer    end
+    def ws        ; config.ws        end
+    def reader    ; config.reader    end
   end
 end

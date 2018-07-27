@@ -12,12 +12,12 @@ pid = fork do
   end
 end
 
-AntMiner::Client.config do |client|
-  client.addresses = File.read('addresses.txt').split(/\n/)
-  client.port = 4028
-  client.writer = wt
-  client.reader = rd
-  client.ws = pid
+client = AntMiner::Client.new do |config|
+  config.addresses = File.read('addresses.txt').split(/\n/)
+  config.port = 4028
+  config.writer = wt
+  config.reader = rd
+  config.ws = pid
 end
 
-AntMiner::Client.new.monitor
+client.monitor
